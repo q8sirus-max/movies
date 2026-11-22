@@ -14,7 +14,9 @@ Movieis is a desktop command-line application that lets users search for movies 
 ## Requirements
 
 - Python 3.8+
-- A free TMDB API key: https://www.themoviedb.org/settings/api
+- A free TMDB API key or Read Access Token: https://www.themoviedb.org/settings/api
+
+The graphical interface also needs Tkinter (bundled with Python) and Pillow.
 
 ## Install
 
@@ -41,6 +43,16 @@ export TMDB_API_KEY=your_key
 Alternatively, pass it per command with `--api-key`.
 
 ## Usage
+
+### Graphical interface
+
+```bash
+python movieis_gui.py
+```
+
+A desktop window with a search bar, a results table, and a details panel showing the poster, rating, runtime, genres, overview, and top cast.
+
+### Command line
 
 ```bash
 python movie_search.py "Inception"
