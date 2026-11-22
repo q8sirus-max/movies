@@ -8,8 +8,11 @@ Movieis is a desktop command-line application that lets users search for movies 
 - Filter results by release year
 - View ratings, vote counts, and short overviews for every match
 - Show full details for a chosen result: runtime, status, genres, countries, tagline, homepage, poster, and top cast
+- Play the official trailer in your browser
+- Show legal streaming / rent / buy availability (via TMDB watch providers)
 - Output raw JSON for scripting
 - Localized results (defaults to `ar-SA`)
+- Accepts both a v3 API key and a v4 read access token; if a v4 token is rejected, its embedded v3 key is used automatically
 
 ## Requirements
 
@@ -50,7 +53,7 @@ Alternatively, pass it per command with `--api-key`.
 python movieis_gui.py
 ```
 
-A desktop window with a search bar, a results table, and a details panel showing the poster, rating, runtime, genres, overview, and top cast.
+A desktop window with a search bar, a results table, and a deep-research panel showing the poster, rating, runtime, genres, overview, top cast, trailer, and where to watch. Pick a region and click **Watch Trailer** or **Open Watch Page**.
 
 ### Command line
 
@@ -58,6 +61,8 @@ A desktop window with a search bar, a results table, and a details panel showing
 python movie_search.py "Inception"
 python movie_search.py "Inception" --year 2010
 python movie_search.py "Inception" --pick 1
+python movie_search.py "Inception" --play
+python movie_search.py "Inception" --watch --region US
 python movie_search.py "Inception" --all
 python movie_search.py "Inception" --json
 ```
@@ -69,8 +74,11 @@ python movie_search.py "Inception" --json
 | `query` | Movie name to search for (required) |
 | `--year` | Filter by release year |
 | `--lang` | Language for results (default: `ar-SA`) |
-| `--api-key` | TMDB API key (or set `TMDB_API_KEY`) |
+| `--api-key` | TMDB API key or read access token (or set `TMDB_API_KEY`) |
 | `--pick N` | Show details for result number N |
+| `--play` | Open the official trailer for the top result |
+| `--watch` | Show legal streaming / rent / buy availability |
+| `--region` | Region for watch providers (default: `KW`) |
 | `--all` | Show details for every result |
 | `--json` | Print raw JSON results |
 

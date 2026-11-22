@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import json
 import os
 import sys
+import webbrowser
 
 import requests
 
@@ -29,16 +31,41 @@ def get_api_key(cli_key):
     return key
 
 
-def tmdb_get(path, api_key, params=None):
+def jwt_aud(token):
+    """Extract the v3 API key (`aud`) from a v4 read access token (JWT)."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload))
+        return data.get("aud")
+    except Exception:
+        return None
+
+
+def tmdb_request(path, api_key, params=None, timeout=20):
+    """GET a TMDB path with auth. A v4 token is tried as Bearer first; if TMDB
+    rejects it (401), its embedded v3 key (`aud`) is used as a fallback."""
     params = dict(params or {})
-    headers = {}
-    if api_key.startswith("eyJ"):
-        headers["Authorization"] = f"Bearer {api_key}"
-    else:
-        params["api_key"] = api_key
-    resp = requests.get(f"{TMDB_API}{path}", params=params, headers=headers, timeout=20)
+    key = (api_key or "").strip()
+    headers = {"Accept": "application/json"}
+    if key.startswith("eyJ") or len(key) > 60:
+        headers["Authorization"] = f"Bearer {key}"
+        resp = requests.get(f"{TMDB_API}{path}", params=params, headers=headers, timeout=timeout)
+        if resp.status_code == 401:
+            aud = jwt_aud(key)
+            if aud:
+                headers.pop("Authorization", None)
+                params["api_key"] = aud
+                resp = requests.get(f"{TMDB_API}{path}", params=params, headers=headers, timeout=timeout)
+        return resp
+    params["api_key"] = key
+    return requests.get(f"{TMDB_API}{path}", params=params, headers=headers, timeout=timeout)
+
+
+def tmdb_get(path, api_key, params=None):
+    resp = tmdb_request(path, api_key, params)
     if resp.status_code == 401:
-        sys.exit("TMDB rejected the token (401). Check your API key / read access token.")
+        sys.exit("TMDB rejected the key (401). Provide a valid v3 API key or v4 token.")
     resp.raise_for_status()
     return resp.json()
 
@@ -56,6 +83,31 @@ def movie_details(movie_id, api_key, language="ar-SA"):
         api_key,
         {"language": language, "append_to_response": "credits,release_dates"},
     )
+
+
+def get_trailer_url(movie_id, api_key, language="ar-SA"):
+    """Return the best official YouTube trailer URL, or None."""
+    for lang in (language, "en-US"):
+        try:
+            data = tmdb_get(f"/movie/{movie_id}/videos", api_key, {"language": lang})
+        except SystemExit:
+            raise
+        except Exception:
+            continue
+        videos = data.get("results") or []
+        for wanted in ("Trailer", "Teaser", "Clip"):
+            for v in videos:
+                if v.get("site") == "YouTube" and (v.get("type") or "") == wanted:
+                    return f"https://www.youtube.com/watch?v={v['key']}"
+    return None
+
+
+def get_watch_providers(movie_id, api_key):
+    """Return the TMDB watch/providers payload (streaming availability)."""
+    try:
+        return tmdb_get(f"/movie/{movie_id}/watch/providers", api_key)
+    except Exception:
+        return {}
 
 
 def fmt_rating(value):
@@ -106,6 +158,21 @@ def print_details(m, api_key):
     print()
 
 
+def print_watch_info(movie_id, api_key, region="KW"):
+    trailer = get_trailer_url(movie_id, api_key)
+    if trailer:
+        print(f"Trailer      : {trailer}")
+    providers = get_watch_providers(movie_id, api_key).get("results") or {}
+    region_data = providers.get(region) or {}
+    link = region_data.get("link")
+    if link:
+        print(f"Watch link   : {link}")
+    for key, label in (("flatrate", "Stream"), ("rent", "Rent"), ("buy", "Buy"), ("free", "Free")):
+        names = [p.get("provider_name") for p in region_data.get(key, [])]
+        if names:
+            print(f"{label:<12}: {', '.join(names)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Search for a movie across TMDB.")
     parser.add_argument("query", nargs="+", help="Movie name to search for")
@@ -115,6 +182,9 @@ def main():
     parser.add_argument("--pick", type=int, help="Show details for result number N")
     parser.add_argument("--all", action="store_true", help="Show details for every result")
     parser.add_argument("--json", action="store_true", help="Print raw JSON results")
+    parser.add_argument("--play", action="store_true", help="Open the official trailer for the top result")
+    parser.add_argument("--watch", action="store_true", help="Show legal streaming availability")
+    parser.add_argument("--region", default="KW", help="Region for watch providers (default: KW)")
     args = parser.parse_args()
 
     api_key = get_api_key(args.api_key)
@@ -128,14 +198,35 @@ def main():
 
     print_results(results)
 
+    if not results:
+        return
+
     if args.pick:
-        if 1 <= args.pick <= len(results):
-            print_details(movie_details(results[args.pick - 1]["id"], api_key, args.lang), api_key)
-        else:
+        if not (1 <= args.pick <= len(results)):
             print(f"Pick must be between 1 and {len(results)}.")
-    elif args.all:
+            return
+        chosen = results[args.pick - 1]
+    else:
+        chosen = results[0]
+
+    if args.all:
         for m in results:
             print_details(movie_details(m["id"], api_key, args.lang), api_key)
+            if args.watch or args.play:
+                print_watch_info(m["id"], api_key, args.region)
+        return
+
+    print_details(movie_details(chosen["id"], api_key, args.lang), api_key)
+    if args.watch or args.play:
+        print_watch_info(chosen["id"], api_key, args.region)
+
+    if args.play:
+        trailer = get_trailer_url(chosen["id"], api_key, args.lang)
+        if trailer:
+            webbrowser.open(trailer)
+            print(f"Opened trailer: {trailer}")
+        else:
+            print("No trailer found for this movie.")
 
 
 if __name__ == "__main__":
