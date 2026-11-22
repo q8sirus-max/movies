@@ -6,6 +6,12 @@ import sys
 
 import requests
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 TMDB_API = "https://api.themoviedb.org/3"
 TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
@@ -17,17 +23,22 @@ def get_api_key(cli_key):
             "Missing TMDB API key.\n"
             "Set it with:  set TMDB_API_KEY=your_key   (Windows)\n"
             "          or: export TMDB_API_KEY=your_key (Linux/macOS)\n"
-            "Get a free key at https://www.themoviedb.org/settings/api"
+            "Accepts either the v3 API key or the v4 read access token.\n"
+            "Get one at https://www.themoviedb.org/settings/api"
         )
     return key
 
 
 def tmdb_get(path, api_key, params=None):
     params = dict(params or {})
-    params["api_key"] = api_key
-    resp = requests.get(f"{TMDB_API}{path}", params=params, timeout=20)
+    headers = {}
+    if api_key.startswith("eyJ"):
+        headers["Authorization"] = f"Bearer {api_key}"
+    else:
+        params["api_key"] = api_key
+    resp = requests.get(f"{TMDB_API}{path}", params=params, headers=headers, timeout=20)
     if resp.status_code == 401:
-        sys.exit("TMDB rejected the API key (401). Check your key.")
+        sys.exit("TMDB rejected the token (401). Check your API key / read access token.")
     resp.raise_for_status()
     return resp.json()
 
